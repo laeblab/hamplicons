@@ -10,7 +10,7 @@ import shutil
 import sys
 import datetime
 
-from argparse import ArgumentParser
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 from gzip import open as gzopen
 from itertools import combinations
 from subprocess import Popen
@@ -721,6 +721,7 @@ def parse_args(argv):
     parser = ArgumentParser(
         description="hamplicons - estimating indel sizes in amplicons using Hamming distances",
         epilog="Needs flash available in PATH " "(http://ccb.jhu.edu/software/FLASH/)",
+        formatter_class=ArgumentDefaultsHelpFormatter,
     )
 
     parser.add_argument(
