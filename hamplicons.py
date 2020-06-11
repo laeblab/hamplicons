@@ -2,7 +2,6 @@
 # FIXME:
 # pylint: disable=line-too-long
 import collections
-import errno
 import json
 import logging
 import multiprocessing
@@ -60,14 +59,6 @@ TargetSequence = collections.namedtuple(
 )
 
 
-def try_makedirs(path):
-    try:
-        os.makedirs(path)
-    except OSError as exc:
-        if exc.errno != errno.EEXIST:
-            raise
-
-
 def run_command(command, **kwargs):
     proc = Popen(command, **kwargs)
     return proc.wait()
@@ -115,39 +106,34 @@ def hamming(seq1, seq2):
 
 def run_flash(args):
     timestamp = datetime.datetime.now()
-    sample_num, destination, file1, file2 = args
+    destination, sample = args
 
-    output = "merged/merged_index{}".format(sample_num + 1)
-    input_1 = "{}/{}".format(destination, file1)
-    input_2 = "{}/{}".format(destination, file2)
+    input_1, input_2 = sample["R1"], sample["R2"]
+    output = os.path.join(destination, "index%03i" % (sample["#"],))
     logfile = output + ".stdout"
 
     command = ["flash", "-t", "1", "-M", "151", "-z", "-o", output, input_1, input_2]
 
     log = logging.getLogger("flash")
-    log.debug("Sample %03i: Merging reads into %s.*", sample_num + 1, output)
+    log.debug("Sample %03i: Merging reads into %s.*", sample["#"], output)
     with open(logfile, "w") as loghandle:
         if run_command(command, stdout=loghandle):
             log.error("error while running FLASH; see log at %r", logfile)
             return False
 
     delta = (datetime.datetime.now() - timestamp).total_seconds()
-    log.info("Sample %03i merged in %i seconds", sample_num + 1, delta)
+    log.info("Sample %03i merged in %i seconds", sample["#"], delta)
 
     return True
 
 
-def merge_fastq(destination, files, threads):
+def merge_fastq(destination, samples, threads):
     log = logging.getLogger("flash")
     log.info("Merging FASTQ files")
 
-    samples = []
-    file_iter = iter(files)
-    for sample_num, (file1, file2) in enumerate(zip(file_iter, file_iter)):
-        samples.append((sample_num, destination, file1, file2))
-
+    args = [(destination, sample) for sample in samples]
     pool = multiprocessing.Pool(processes=threads)
-    for result in pool.imap(run_flash, samples):
+    for result in pool.imap(run_flash, args):
         if not result:
             pool.terminate()
             return False
@@ -166,6 +152,45 @@ def count_fastq_sequences(filename, min_length=MIN_READ_LENGTH):
                     counts[read] += 1
 
     return dict(counts)
+
+
+def collect_fastq_files(log, root, recursive):
+    log.info("Locating FASTQ files in %s", root)
+
+    fastq_files = collections.defaultdict(dict)
+    for (dirpath, _, filenames) in os.walk(root):
+        for filename in filenames:
+            if filename.endswith(READ_FORMAT):
+                # someName_Si_L001_Rx_001.fastq.gz
+                fields = filename.split("_")
+                name = fields[0]
+                sample = fields[-4]  # x = sequential sample numbering prefixed with 'S'
+                pair = fields[-2]  # i = R1 or R2 (paired end)
+
+                pairs = fastq_files[(int(sample[1:]), name)]
+                if pair in pairs:
+                    log.error("Multiple %s files for %s (%s)", pair, name, sample)
+                    return None
+                elif pair not in ("R1", "R2"):
+                    log.error("Unexpected %s file for %s (%s)", pair, name, sample)
+                    return None
+
+                pairs[pair] = os.path.join(dirpath, filename)
+
+        if not recursive:
+            break
+
+    samples = []
+    for idx, ((sample, name), pairs) in enumerate(sorted(fastq_files.items()), start=1):
+        if len(pairs) != 2:
+            log.error("Missing files for sample %r (%i)", sample, name)
+            return None
+
+        samples.append({"#": idx, "name": name, "R1": pairs["R1"], "R2": pairs["R2"]})
+
+    log.info("Identified %g FASTQ file pairs", len(samples))
+
+    return samples
 
 
 ##############################################################################
@@ -443,15 +468,17 @@ def ultra_relaxed_matching(args, targets, read_counts, results, forlog):
 
 
 def analyze_sample(parameters):
-    args, sample_num, targets = parameters
+    args, sample, targets = parameters
     log = logging.getLogger("matching")
 
     results = {}
     for target in targets:
         results[target.name] = collections.defaultdict(int)
 
-    filename = "merged/merged_index{}.extendedFrags.fastq.gz".format(str(sample_num))
-    log.debug("Sample %03i: Reading index from %s", sample_num, filename)
+    filename = os.path.join(
+        args.output_merged, "index%03i.extendedFrags.fastq.gz" % (sample["#"],)
+    )
+    log.debug("Sample %03i: Reading index from %s", sample["#"], filename)
     read_counts = count_fastq_sequences(filename)
     total_reads = sum(read_counts.values())
 
@@ -463,7 +490,7 @@ def analyze_sample(parameters):
     # STRICT matching (very fast, takes out anything we can easily assign to a fasta target)
     log.debug(
         "Sample %03i: Strict matching %i products with %i reads",
-        sample_num,
+        sample["#"],
         len(read_counts),
         sum(read_counts.values()),
     )
@@ -473,7 +500,7 @@ def analyze_sample(parameters):
         # RELAXED matching (slower, but not very)
         log.debug(
             "Sample %03i: Relaxed matching %i products with %i reads",
-            sample_num,
+            sample["#"],
             len(read_counts),
             sum(read_counts.values()),
         )
@@ -484,13 +511,15 @@ def analyze_sample(parameters):
         # also any offtargets these primers may be producing will also show up here...maybe that should be a number to report...
         log.debug(
             "Sample %03i: Ultra relaxed matching %i products with %i reads",
-            sample_num,
+            sample["#"],
             len(read_counts),
             sum(read_counts.values()),
         )
         ultra_relaxed_matching(args, targets, read_counts, results, logstats)
 
     return {
+        "#": sample["#"],
+        "name": sample["name"],
         "#reads": total_reads,
         "#unmatched": sum(read_counts.values()),
         "targets": results,
@@ -499,7 +528,7 @@ def analyze_sample(parameters):
     }
 
 
-def log_sample_stats(sample, sample_num):
+def log_sample_stats(sample):
     log = logging.getLogger("matching")
 
     name_length = max(len(x) for x in sample["logstats"])
@@ -532,7 +561,7 @@ def log_sample_stats(sample, sample_num):
             unmatched_reads.append((count, read))
 
     if unmatched_reads:
-        log.warning("Unmatched reads, index: %s", sample_num)
+        log.warning("Unmatched reads, index: %s", sample["#"])
         for count, read in sorted(unmatched_reads):
             log.warning(" % 6i: %s", count, read)
 
@@ -540,24 +569,23 @@ def log_sample_stats(sample, sample_num):
     log.info("Unmatched total reads: %s", sum(sample["unmatched"].values()))
 
 
-def analyze(args, files, fasta):
+def analyze(args, samples, fasta):
     log = logging.getLogger("matching")
-
-    samples = []
-    for sample_num in range(len(files) // 2):
-        samples.append((args, sample_num + 1, fasta))
 
     results = []  # results are [{name: defaultdict(int), ...}, ...]
     pool = multiprocessing.Pool(processes=args.threads)
-    for sample_num, output in enumerate(pool.imap(analyze_sample, samples), start=1):
-        log.info("Completed analysis of sample %i ..", sample_num)
-        log_sample_stats(sample=output, sample_num=sample_num)
+    pool_args = [(args, sample, fasta) for sample in samples]
+    for output in pool.imap(analyze_sample, pool_args):
+        log.info("Completed analysis of sample %i ..", output["#"])
+        log_sample_stats(sample=output)
 
         output.pop("unmatched")
         results.append(output)
 
     if results:
         output_summary = {
+            "#": "*",
+            "name": "summary",
             "logstats": results[0].pop("logstats"),
             "unmatched": {},
         }
@@ -568,12 +596,12 @@ def analyze(args, files, fasta):
                     output_summary["logstats"][name][idx] += count
 
         log.info("Completed analysis of %i samples!", len(results))
-        log_sample_stats(sample=output_summary, sample_num="*")
+        log_sample_stats(sample=output_summary)
 
     return results
 
 
-def write_report(args, results, output_filename, sample_names):
+def write_report(args, results, output_filename):
     workbook = xlsxwriter.Workbook(output_filename)
     thousandsepstyle = workbook.add_format({"num_format": "#,##0"})
     percentstyle = workbook.add_format({"num_format": "0.00%"})
@@ -613,14 +641,14 @@ def write_report(args, results, output_filename, sample_names):
             0, col + max_peaks, "peak{}%".format(col - (peak_col_start - 1))
         )
     row = 1
-    for sample_num, sample in enumerate(results):
+    for sample in results:
         for target, peaks in sample["targets"].items():
             if sum(peaks.values()) >= TARGET_TOTAL_THRESHOLD:
                 if args.cw:
-                    worksheet.write(row, 0, convert_index_to_well(sample_num + 1))
+                    worksheet.write(row, 0, convert_index_to_well(sample["#"]))
                 else:
-                    worksheet.write(row, 0, sample_num + 1)
-                worksheet.write(row, 1, sample_names[sample_num])
+                    worksheet.write(row, 0, sample["#"])
+                worksheet.write(row, 1, sample["name"])
                 worksheet.write(row, 2, target)
                 worksheet.write(row, 3, sum(peaks.values()), thousandsepstyle)
                 worksheet.write(row, 4, peaks[0], thousandsepstyle)
@@ -654,7 +682,7 @@ def write_report(args, results, output_filename, sample_names):
     workbook.close()
 
 
-def write_json(args, targets, results, output_filename, sample_names):
+def write_json(args, targets, results, output_filename):
     data = {
         "samples": {},
         "targets": {target.name: target.seq for target in targets},
@@ -662,7 +690,7 @@ def write_json(args, targets, results, output_filename, sample_names):
         "settings": {"-cw": args.cw, "-dr": args.dr, "-hd": args.hd, "-pl": args.pl,},
     }
 
-    for sample_num, sample in enumerate(results):
+    for sample in results:
         result = {}
         for target_name, target_data in sample["targets"].items():
             peaks = dict(target_data)
@@ -678,8 +706,8 @@ def write_json(args, targets, results, output_filename, sample_names):
                     "peaks": peaks,
                 }
 
-        data["samples"][sample_num + 1] = {
-            "name": sample_names[sample_num],
+        data["samples"][sample["#"]] = {
+            "name": sample["name"],
             "reads": sample["#reads"],
             "unidentified": sample["#unmatched"],
             "targets": result,
@@ -715,11 +743,11 @@ def parse_args(argv):
         "-dd",
         type=str,
         default="fastq",
-        help="data directory. Directory containing fastq.gz files.",
+        help="data directory. Directory containing fastq.gz files",
         metavar="directory",
     )
     parser.add_argument(
-        "-do", type=str, default=".", help="output directory", metavar="directory"
+        "-dd-recursive", action="store_true", help="Search data directoryrecursively",
     )
     parser.add_argument(
         "-pl",
@@ -755,9 +783,6 @@ def parse_args(argv):
 def main(argv):
     args = parse_args(argv)
 
-    # set working dir
-    os.chdir(args.do)
-
     # if we are merging, check that flash exists
     if not (args.sm or shutil.which("flash")):
         print("\nFatal error:\n")
@@ -766,10 +791,11 @@ def main(argv):
         )
         return 1
 
+    args.output_merged = args.output_prefix + ".merged"
+    os.makedirs(args.output_merged, exist_ok=True)
+
     setup_logging(args.output_prefix + ".log")
     log = logging.getLogger("main")
-
-    try_makedirs("merged")
 
     # read targets
     log.info("Reading FASTA file %r", args.tf)
@@ -777,39 +803,24 @@ def main(argv):
     if targets is None:
         return 1
 
-    log.info("Locating FASTQ files in %s", os.path.abspath(args.dd))
-    files = []
-    for file_list in os.listdir(args.dd):
-        if file_list.endswith(READ_FORMAT):
-            files.append(file_list)
-        # sort the files list..this should work for MiSeq stuff as long as it keeps the name as below
-        # someName_Si_L001_Rx_001.fastq hvor i er index (NO ITS NOT..its just sequential sample numbering) of x er 1 eller 2 (paired end)
-        files.sort(key=lambda x: int(x.split("_")[-2][1:]))  # sort on x
-        files.sort(key=lambda x: int(x.split("_")[-4][1:]))  # sort on i
-
-    sample_names = []
-    for filename in files[::2]:
-        sample_names.append(filename.split("_")[0])
-
-    log.info("Identified %g FASTQ file pairs", len(files) / 2)
-
+    # Collect sample files (FASTQ) and names
+    samples = collect_fastq_files(log, args.dd, recursive=args.dd_recursive)
+    if samples is None:
+        return 1
     # merge reads
     if not args.sm:
-        if not merge_fastq(args.dd, files, threads=args.threads):
+        if not merge_fastq(args.output_merged, samples, threads=args.threads):
             return 1
     else:
         log.info("Skipping FASTQ merging")
 
     # analyze reads
     log.info("Analyzing FASTQ files")
-    results = analyze(args, files, targets)
+    results = analyze(args, samples, targets)
 
     log.info("Writing report to %r", args.output_prefix + ".xlsx")
     write_report(
-        args=args,
-        results=results,
-        output_filename=args.output_prefix + ".xlsx",
-        sample_names=sample_names,
+        args=args, results=results, output_filename=args.output_prefix + ".xlsx",
     )
 
     log.info("Writing JSON to %r", args.output_prefix + ".json")
@@ -818,7 +829,6 @@ def main(argv):
         targets=targets,
         results=results,
         output_filename=args.output_prefix + ".json",
-        sample_names=sample_names,
     )
 
     log.info("Done")
