@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-# FIXME:
-# pylint: disable=line-too-long
 import collections
 import json
 import logging
@@ -61,7 +59,7 @@ def run_command(command, **kwargs):
     return proc.wait()
 
 
-def setup_logging(filename, level=logging.INFO):
+def setup_logging(level=logging.INFO):
     fmt = "%(asctime)s - %(message)s"
     if not sys.stdout.isatty():
         fmt = "%(asctime)s - %(levelname)s - %(message)s"
@@ -80,6 +78,10 @@ def setup_logging(filename, level=logging.INFO):
         },
     )
 
+    return logging.getLogger("main")
+
+
+def setup_file_logging(filename, level=logging.INFO):
     # setup a global warning logger
     formatter = logging.Formatter("%(asctime)s : %(levelname)s : %(message)s")
     handler = logging.FileHandler(filename, mode="w")
@@ -782,25 +784,32 @@ def parse_args(argv):
         "--version", action="version", version="%(prog)s v" + __version__
     )
 
+    parser.add_argument(
+        "--log-level",
+        type=str.upper,
+        default="INFO",
+        choices=("DEBUG", "INFO", "WARNING", "ERROR"),
+        help="Log-level of messages printed STDERR and written to ${output_prefix}.log",
+    )
+
     return parser.parse_args(argv)
 
 
 def main(argv):
     args = parse_args(argv)
+    log = setup_logging(log_level=args.log_level)
 
     # if we are merging, check that flash exists
     if not (args.sm or shutil.which("flash")):
-        print("\nFatal error:\n")
-        print(
-            "This program requires flash to be available on path.\nI.e. 'which flash' needs to return something.\nFlash is available here: http://ccb.jhu.edu/software/FLASH/"
-        )
+        log.error("Required executable `flash` not found in PATH!x")
+        log.error("Please install FLASH from 'http://ccb.jhu.edu/software/FLASH/'")
+
         return 1
 
     args.output_merged = args.output_prefix + ".merged"
     os.makedirs(args.output_merged, exist_ok=True)
 
-    setup_logging(args.output_prefix + ".log")
-    log = logging.getLogger("main")
+    setup_file_logging(log_file=args.output_prefix + ".log", log_level=args.log_level)
 
     # read targets
     log.info("Reading FASTA file %r", args.tf)
