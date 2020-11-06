@@ -805,6 +805,15 @@ def parse_args(argv):
 
     group = parser.add_argument_group("Output")
     group.add_argument(
+        "-of",
+        "--output-formats",
+        nargs="+",
+        choices=("json", "xlsx"),
+        metavar="FORMAT",
+        default="xlsx",
+        help="One or more formats (xlsx or json) in which to save analysis results",
+    )
+    group.add_argument(
         "-cw",
         "--convert-to-wells",
         action="store_true",
@@ -866,20 +875,22 @@ def main(argv):
     log.info("Analyzing FASTQ files")
     results = analyze(args, samples, targets)
 
-    log.info("Writing report to %r", args.output_prefix + ".xlsx")
-    write_report(
-        args=args,
-        results=results,
-        output_filename=args.output_prefix + ".xlsx",
-    )
+    if "xlsx" in args.output_formats:
+        log.info("Writing report to %r", args.output_prefix + ".xlsx")
+        write_report(
+            args=args,
+            results=results,
+            output_filename=args.output_prefix + ".xlsx",
+        )
 
-    log.info("Writing JSON to %r", args.output_prefix + ".json")
-    write_json(
-        args=args,
-        targets=targets,
-        results=results,
-        output_filename=args.output_prefix + ".json",
-    )
+    if "json" in args.output_formats:
+        log.info("Writing JSON to %r", args.output_prefix + ".json")
+        write_json(
+            args=args,
+            targets=targets,
+            results=results,
+            output_filename=args.output_prefix + ".json",
+        )
 
     log.info("Done")
 
