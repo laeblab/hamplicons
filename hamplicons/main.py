@@ -800,7 +800,7 @@ def parse_args(argv):
 
 def main(argv):
     args = parse_args(argv)
-    log = setup_logging(log_level=args.log_level)
+    log = setup_logging(level=args.log_level)
 
     # if we are merging, check that flash exists
     if not (args.sm or shutil.which("flash")):
@@ -812,7 +812,7 @@ def main(argv):
     args.output_merged = args.output_prefix + ".merged"
     os.makedirs(args.output_merged, exist_ok=True)
 
-    setup_file_logging(log_file=args.output_prefix + ".log", log_level=args.log_level)
+    setup_file_logging(filename=args.output_prefix + ".log", level=args.log_level)
 
     # read targets
     log.info("Reading FASTA file %r", args.tf)
