@@ -648,7 +648,10 @@ def write_report(args, results, output_filename):
         for target, peaks in sample["targets"].items():
             if sum(peaks.values()) >= TARGET_TOTAL_THRESHOLD:
                 if args.convert_to_wells:
-                    worksheet.write(row, 0, convert_index_to_well(sample["#"]))
+                    rows, columns = args.plate_layout
+                    well = convert_index_to_well(sample["#"], rows, columns)
+
+                    worksheet.write(row, 0, well)
                 else:
                     worksheet.write(row, 0, sample["#"])
                 worksheet.write(row, 1, sample["name"])
