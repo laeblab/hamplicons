@@ -18,10 +18,7 @@ from subprocess import Popen
 import coloredlogs
 import xlsxwriter
 
-
-__version_tuple__ = (4, 0, 0)
-__version__ = ".".join(map(str, __version_tuple__))
-
+from . import __version__
 
 ## Input constants
 # Expected format/extension of input files
@@ -846,5 +843,9 @@ def main(argv):
     return 0
 
 
-if __name__ == "__main__":
+def entry_point():
     sys.exit(main(sys.argv[1:]))
+
+
+if __name__ == "__main__":
+    entry_point()
