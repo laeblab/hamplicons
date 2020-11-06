@@ -383,13 +383,13 @@ def relaxed_matching(args, targets, read_counts, results, forlog):
         # lbar, lham, rbar, rham
         parameters = (
             # 1. lrsu: 5' long relaxed, 3' short ultra
-            (BARSIZE, target.ham_5p, REDUCED_BAR, args.hd),
+            (BARSIZE, target.ham_5p, REDUCED_BAR, args.hamming_distance),
             # 2. sulr: 5' short ultra, 3' long relaxed
-            (REDUCED_BAR, args.hd, BARSIZE, target.ham_3p),
+            (REDUCED_BAR, args.hamming_distance, BARSIZE, target.ham_3p),
             # 3. srlu: 5' short relaxed, 5' long ultra
-            (REDUCED_BAR, target.ham_5p, BARSIZE, args.hd),
+            (REDUCED_BAR, target.ham_5p, BARSIZE, args.hamming_distance),
             # 4. lusr: 5' long ultra, 5' short relaxed
-            (BARSIZE, args.hd, REDUCED_BAR, target.ham_3p),
+            (BARSIZE, args.hamming_distance, REDUCED_BAR, target.ham_3p),
         )
 
         for idx, (lbar, lham, rbar, rham) in enumerate(parameters, start=1):
@@ -407,7 +407,7 @@ def ultra_relaxed_matching(args, targets, read_counts, results, forlog):
     for read, count in tuple(read_counts.items()):
         # find out where a read MIGHT originate from
         matching_pcrs = []
-        min_score = args.hd
+        min_score = args.hamming_distance
         for target in targets:
             score = hamming(
                 target.barcode_5p[:REDUCED_BAR], read[:REDUCED_BAR]
@@ -424,16 +424,17 @@ def ultra_relaxed_matching(args, targets, read_counts, results, forlog):
             for target in matching_pcrs:
                 # lusu
                 if (
-                    hamming(target.barcode_5p, read[:BARSIZE]) < args.hd
+                    hamming(target.barcode_5p, read[:BARSIZE]) < args.hamming_distance
                     and hamming(target.barcode_3p[-REDUCED_BAR:], read[-REDUCED_BAR:])
-                    < args.hd
+                    < args.hamming_distance
                 ):
                     maybe_product.add(target)
                 # sulu
                 if (
                     hamming(target.barcode_5p[:REDUCED_BAR], read[:REDUCED_BAR])
-                    < args.hd
-                    and hamming(target.barcode_3p, read[-BARSIZE:]) < args.hd
+                    < args.hamming_distance
+                    and hamming(target.barcode_3p, read[-BARSIZE:])
+                    < args.hamming_distance
                 ):
                     maybe_product.add(target)
 
@@ -443,7 +444,7 @@ def ultra_relaxed_matching(args, targets, read_counts, results, forlog):
                 read_counts.pop(read)  # remove analyzed reads
                 forlog[target.name][5] += count
             elif len(maybe_product) > 1:
-                min_score = args.hd * 2
+                min_score = args.hamming_distance * 2
                 winner = []
                 for target in maybe_product:
                     score = hamming(target.barcode_5p, read[:BARSIZE]) + hamming(
@@ -496,7 +497,7 @@ def analyze_sample(parameters):
     )
     strict_matching(targets, read_counts, results, logstats)
 
-    if not args.dr:
+    if not args.deactivate_relaxed_matching:
         # RELAXED matching (slower, but not very)
         log.debug(
             "Sample %03i: Relaxed matching %i products with %i reads",
@@ -646,7 +647,7 @@ def write_report(args, results, output_filename):
     for sample in results:
         for target, peaks in sample["targets"].items():
             if sum(peaks.values()) >= TARGET_TOTAL_THRESHOLD:
-                if args.cw:
+                if args.convert_to_wells:
                     worksheet.write(row, 0, convert_index_to_well(sample["#"]))
                 else:
                     worksheet.write(row, 0, sample["#"])
@@ -690,10 +691,10 @@ def write_json(args, targets, results, output_filename):
         "targets": {target.name: target.seq for target in targets},
         "version": __version__,
         "settings": {
-            "-cw": args.cw,
-            "-dr": args.dr,
-            "-hd": args.hd,
-            "-pl": args.pl,
+            "-cw": args.convert_to_wells,
+            "-dr": args.deactivate_relaxed_matching,
+            "-hd": args.hamming_distance,
+            "-pl": args.plate_layout,
         },
     }
 
@@ -736,45 +737,8 @@ def parse_args(argv):
     )
 
     parser.add_argument(
-        "-sm", action="store_true", help="skip merging of fastq paired end reads"
+        "--version", action="version", version="%(prog)s v" + __version__
     )
-    parser.add_argument("-dr", action="store_true", help="Deactivate relaxed matching")
-    parser.add_argument("-cw", action="store_true", help="Convert Index to Well")
-    parser.add_argument(
-        "-tf",
-        type=str,
-        default="targets.fa",
-        help="Fasta file with WT PCR",
-        metavar="targets",
-    )
-    parser.add_argument(
-        "-dd",
-        type=str,
-        default="fastq",
-        help="data directory. Directory containing fastq.gz files",
-        metavar="directory",
-    )
-    parser.add_argument(
-        "-dd-recursive",
-        action="store_true",
-        help="Search data directoryrecursively",
-    )
-    parser.add_argument(
-        "-pl",
-        type=list,
-        nargs=2,
-        help="Define layout for correct index translation, e.g. -pl 8 12",
-        default=[8, 12],
-        metavar="int",
-    )
-    parser.add_argument(
-        "-hd",
-        type=int,
-        help="Allow this many mismatches in relaxed matching",
-        default=4,
-        metavar="int",
-    )
-
     parser.add_argument(
         "--threads",
         type=int,
@@ -782,17 +746,76 @@ def parse_args(argv):
         default=multiprocessing.cpu_count(),
         metavar="N",
     )
-
-    parser.add_argument(
-        "--version", action="version", version="%(prog)s v" + __version__
-    )
-
     parser.add_argument(
         "--log-level",
         type=str.upper,
         default="INFO",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
         help="Log-level of messages printed STDERR and written to ${output_prefix}.log",
+    )
+
+    group = parser.add_argument_group("Input")
+    group.add_argument(
+        "-tf",
+        "--targets-fasta",
+        type=str,
+        default="targets.fa",
+        help="Fasta file containing WT PCR sequences",
+        metavar="TARGETS",
+    )
+    group.add_argument(
+        "-dd",
+        "--data-directory",
+        type=str,
+        default="fastq",
+        help="Directory containing fastq.gz files",
+        metavar="DIRECTORY",
+    )
+    group.add_argument(
+        "-dd-recursive",
+        "--data-directory-recursive",
+        action="store_true",
+        help="Search data directory recursively",
+    )
+    group.add_argument(
+        "-sm",
+        "--skip-merging",
+        action="store_true",
+        help="skip merging of fastq paired end reads",
+    )
+
+    group = parser.add_argument_group("Matching")
+    group.add_argument(
+        "-dr",
+        "--deactivate-relaxed-matching",
+        action="store_true",
+        help="Deactivate relaxed matching",
+    )
+    group.add_argument(
+        "-hd",
+        "--hamming-distance",
+        type=int,
+        help="Allow this many mismatches in relaxed matching",
+        default=4,
+        metavar="INT",
+    )
+
+    group = parser.add_argument_group("Output")
+    group.add_argument(
+        "-cw",
+        "--convert-to-wells",
+        action="store_true",
+        help="Convert Index to Well",
+    )
+    group.add_argument(
+        "-pl",
+        "--plate-layout",
+        type=list,
+        nargs=2,
+        help="Define layout for index translation when using --convert-to-wells. "
+        "E.g. `-pl 8 12` for 8 rows and 12 columns",
+        default=[8, 12],
+        metavar="INT",
     )
 
     return parser.parse_args(argv)
@@ -803,7 +826,7 @@ def main(argv):
     log = setup_logging(level=args.log_level)
 
     # if we are merging, check that flash exists
-    if not (args.sm or shutil.which("flash")):
+    if not (args.skip_merging or shutil.which("flash")):
         log.error("Required executable `flash` not found in PATH!x")
         log.error("Please install FLASH from 'http://ccb.jhu.edu/software/FLASH/'")
 
@@ -814,24 +837,29 @@ def main(argv):
 
     setup_file_logging(filename=args.output_prefix + ".log", level=args.log_level)
 
-    # read targets
-    log.info("Reading FASTA file %r", args.tf)
-    targets = build_targets(read_fasta(args.tf), max_ham=args.hd)
+    log.info("Reading FASTA file %r", args.targets_fasta)
+    targets = build_targets(
+        read_fasta(args.targets_fasta),
+        max_ham=args.hamming_distance,
+    )
+
     if targets is None:
         return 1
 
-    # Collect sample files (FASTQ) and names
-    samples = collect_fastq_files(log, args.dd, recursive=args.dd_recursive)
+    samples = collect_fastq_files(
+        log,
+        args.data_directory,
+        recursive=args.data_directory_recursive,
+    )
+
     if samples is None:
         return 1
-    # merge reads
-    if not args.sm:
-        if not merge_fastq(args.output_merged, samples, threads=args.threads):
-            return 1
-    else:
-        log.info("Skipping FASTQ merging")
 
-    # analyze reads
+    if args.skip_merging:
+        log.info("Skipping FASTQ merging")
+    elif not merge_fastq(args.output_merged, samples, threads=args.threads):
+        return 1
+
     log.info("Analyzing FASTQ files")
     results = analyze(args, samples, targets)
 
