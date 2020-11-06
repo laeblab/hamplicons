@@ -28,23 +28,23 @@ MIN_READ_LENGTH = 50
 TARGET_TOTAL_THRESHOLD = 100
 # minimum number of reads a specific target variation must have
 TARGET_LOCAL_THRESHOLD_READS = 10
-# minimum percentage of reads a specific indel must contribute to the total indels to be reported
+# minimum percentage of reads observed with a specific indel to be reported
 TARGET_LOCAL_THRESHOLD_PERCENTAGE = 0.05
 
 ## Unmatched reporting constants
-# report significant products with >=this reads
+# report significant products with >= this reads
 SIGNIFICANT_UNMATCHED_THRESHOLD_READS = 500
-# require these products to be at least this long (otherwise its probably primer-dimers)
+# require these products to be at least this long, to exclude probable primer-dimers
 SIGNIFICANT_UNMATCHED_THRESHOLD_LENGTH = 50
 
 ## Barcode matching constants
-# bp in start/end that must match to categorize fastq reads as specific product from fasta
+# bp in start/end that must match to categorize fastq reads as a specific amplicon
 BARSIZE = 30
 # when performing additional matching
 REDUCED_BAR = 15
 
 ## Other constants
-# Size of regions compared between PCR products to ensure we dont have way too similar sequences
+# Size of regions compared between PCR products to avoid too similar sequences
 WORRY_ZONE = 40
 
 
@@ -376,8 +376,9 @@ def relaxed_matching(args, targets, read_counts, results, forlog):
     for target in targets:
         # long = l = BARSIZE, short = s = REDUCED_BAR
         # relaxed = r = ham < nearest ham, ultra relaxed = u = ham < max_ham
-        # never short short (off-targets)
-        # ultru ultra (uncertain origin) will be done in 'ultra relaxed matching' which is very slow
+        # We never use never use "short short" due to risk of off-targets, but "ultru
+        # ultra" (uncertain origin) will be done in 'ultra relaxed matching' which is
+        # very slow
 
         # lbar, lham, rbar, rham
         parameters = (
@@ -486,7 +487,7 @@ def analyze_sample(parameters):
         # strict, lrsu, sulr, srlu, lusr, ur total
         logstats[target.name] = [0, 0, 0, 0, 0, 0]
 
-    # STRICT matching (very fast, takes out anything we can easily assign to a fasta target)
+    # STRICT matching is very fast and assigns anything we can easily identify
     log.debug(
         "Sample %03i: Strict matching %i products with %i reads",
         sample["#"],
@@ -506,8 +507,10 @@ def analyze_sample(parameters):
         relaxed_matching(args, targets, read_counts, results, logstats)
 
         # ULTRA RELAXED MATCHING (probably slow)
-        # now anything left will be ultra relaxed matched. This opens up for a read to match multiple targets  so we need to check for this and
-        # also any offtargets these primers may be producing will also show up here...maybe that should be a number to report...
+        # now anything left will be ultra relaxed matched. This opens up for a read to
+        # match multiple targets  so we need to check for this and also any offtargets
+        # these primers may be producing will also show up here...maybe that should be
+        # a number to report...
         log.debug(
             "Sample %03i: Ultra relaxed matching %i products with %i reads",
             sample["#"],
