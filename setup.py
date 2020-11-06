@@ -27,6 +27,7 @@ setup(
     name="hamplicons",
     version=_get_version(),
     packages=find_packages(),
+    description="Estimation of indel sizes in amplicons using Hamming distances",
     install_requires=_get_requirements(),
     entry_points={"console_scripts": ["hamplicons=hamplicons.main:entry_point"]},
     zip_safe=True,
