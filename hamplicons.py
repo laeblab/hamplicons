@@ -122,7 +122,7 @@ def run_flash(args):
             return False
 
     delta = (datetime.datetime.now() - timestamp).total_seconds()
-    log.info("Sample %03i merged in %i seconds", sample["#"], delta)
+    log.info("Sample %03i merged in %.1f seconds", sample["#"], delta)
 
     return True
 
@@ -687,7 +687,12 @@ def write_json(args, targets, results, output_filename):
         "samples": {},
         "targets": {target.name: target.seq for target in targets},
         "version": __version__,
-        "settings": {"-cw": args.cw, "-dr": args.dr, "-hd": args.hd, "-pl": args.pl,},
+        "settings": {
+            "-cw": args.cw,
+            "-dr": args.dr,
+            "-hd": args.hd,
+            "-pl": args.pl,
+        },
     }
 
     for sample in results:
@@ -748,7 +753,9 @@ def parse_args(argv):
         metavar="directory",
     )
     parser.add_argument(
-        "-dd-recursive", action="store_true", help="Search data directoryrecursively",
+        "-dd-recursive",
+        action="store_true",
+        help="Search data directoryrecursively",
     )
     parser.add_argument(
         "-pl",
@@ -821,7 +828,9 @@ def main(argv):
 
     log.info("Writing report to %r", args.output_prefix + ".xlsx")
     write_report(
-        args=args, results=results, output_filename=args.output_prefix + ".xlsx",
+        args=args,
+        results=results,
+        output_filename=args.output_prefix + ".xlsx",
     )
 
     log.info("Writing JSON to %r", args.output_prefix + ".json")
