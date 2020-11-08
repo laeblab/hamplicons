@@ -1,19 +1,38 @@
 # hamplicons - estimating indel sizes in amplicons using Hamming distances
 
-Back to length testing reads after categorizing them based on approx 30 bp match in start and end
-also additional matching. very important
-much faster than de2 and reporting as good or better than de3.
-reason for leaving de3 with its bowtie alignment was that bowtie occasionally fails with larger indels.
+## Requirements
 
-Thinking about how to deal with similar PCR products, e.g. alternative primers for same product
-ideal is a frameshifting alternative primer but we have historically used a few non-frameshifting ones
-Currently I deal with by NOT allowing a ham score larger than or equal to the 2 products ham, which
-for a non-frameshifted alternative primer usually means 1.
-The issue with this is that if there naturally exists a SNP in the early part, I cant approve the product.
-to get around this I currently do a ultra-relaxed matching where these will be found, and then hammed to find out which
-product they are most similar to.
-And alternative is to figure out the differences.
-E.g. AAATGCC
-VS   TAATGCC
-now i know that I cant allow a SNP on pos 0, but  SNPS are ok elsewhere.
-to generalize you would create a binary mask like 0111111 and then when hamming you also give the mask and no hamming is done on 0
+`hamplicons` requires Python3 and [FLASH](https://ccb.jhu.edu/software/FLASH/) (Fast Length Adjustment of SHort reads). The `flash` executable must be located in the current user's `PATH`.
+
+## Installation
+
+``` bash
+$ git clone https://github.com/laeblab/hamplicons.git
+$ cd hamplicons
+$ python3 setup.py install
+$ hamplicons -h
+```
+
+## Usage
+
+By default `hamplicons` expects a FASTA file named `targets.fa` (see below) and a directory containing FASTQ files named `fastq` to be located in the current working directory. Additionally, the FASTQ files are expected to follow the standard Illumina naming scheme, namely `.*_S[0-9]+_L[0-9]+_R[12]_[0-9]+.fastq.gz`. Output is written using an `output` prefix by default
+
+``` bash
+$ ls -p
+fastq/  targets.fa
+$ hamplicons
+$ ls -p
+fastq/  output.xlsx  output.log  output.merged/  targets.fa
+```
+
+The location of both the FASTA file and the FASTQ directory, as well as the output prefix can be changed using command-line options:
+
+``` bash
+$ hamplicons --data-directory /path/to/fastqs/ --targets-fasta /path/to/targets.fa my_ouput_prefix
+$ ls -p
+my_output_prefix.xlsx  my_output_prefix.log  my_output_prefix.merged/
+```
+
+## Target Amplicons
+
+The `targets.fa` file is expected to contain one or more wild-type amplicons in FASTA format. The names of amplicon are used in the output report and must be unique. In addition, as `hamplicons` assigns sequences to wild-type amplicons by comparing them to the first and last bp of the wild-type amplicon, `hamplicon` cannot differentiate wild-type amplicons that only differ outside of the first/last 30 bp.
