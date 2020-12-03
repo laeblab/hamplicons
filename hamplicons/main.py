@@ -839,7 +839,7 @@ def main(argv):
 
     # if we are merging, check that flash exists
     if not (args.skip_merging or shutil.which("flash")):
-        log.error("Required executable `flash` not found in PATH!x")
+        log.error("Required executable `flash` not found in PATH!")
         log.error("Please install FLASH from 'http://ccb.jhu.edu/software/FLASH/'")
 
         return 1
