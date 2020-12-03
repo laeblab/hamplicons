@@ -92,8 +92,8 @@ def setup_file_logging(filename, level=logging.INFO):
 
 
 def convert_index_to_well(index, rows=8, columns=12):  # 1 based index
-    thisrow = (index - 1) / columns
-    thisplate = thisrow / rows
+    thisrow = (index - 1) // columns
+    thisplate = thisrow // rows
     thiscolumn = index - thisrow * columns
     thisrow -= rows * thisplate
     return "{}{}_p{}".format(chr(65 + thisrow), thiscolumn, thisplate)
