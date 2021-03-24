@@ -157,7 +157,7 @@ def collect_fastq_files(log, root, recursive):
     log.info("Locating FASTQ files in %s", root)
 
     fastq_files = collections.defaultdict(dict)
-    for (dirpath, _, filenames) in os.walk(root):
+    for (dirpath, _, filenames) in os.walk(root, followlinks=True):
         for filename in filenames:
             if filename.endswith(READ_FORMAT):
                 # someName_Si_L001_Rx_001.fastq.gz
