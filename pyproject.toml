@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hamplicons"
+version = "4.2.0"
+authors = [
+  { name="Lasse Ebdrup Pedersen", email="lasse.ebdrup@gmail.com" },
+]
+description = "Estimation of indel sizes in amplicons using Hamming distances"
+readme = "README.md"
+requires-python = ">=3.7"
+
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+[project.scripts]
+hamplicons = "hamplicons.main:entry_point"
+
+[project.urls]
+"Homepage" = "https://github.com/laeblab/hamplicons"
+"Bug Tracker" = "https://github.com/laeblab/hamplicons/issues"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--import-mode=importlib",
+]
