@@ -36,3 +36,7 @@ my_output_prefix.xlsx  my_output_prefix.log  my_output_prefix.merged/
 ## Target Amplicons
 
 The `targets.fa` file is expected to contain one or more wild-type amplicons in FASTA format. The names of amplicon are used in the output report and must be unique. In addition, as `hamplicons` assigns sequences to wild-type amplicons by comparing them to the first and last bp of the wild-type amplicon, `hamplicon` cannot differentiate wild-type amplicons that only differ outside of the first/last 30 bp.
+
+## Testing
+
+To run the tests, install pytest and execute it in the repository root directory

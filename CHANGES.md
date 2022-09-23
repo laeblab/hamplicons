@@ -3,7 +3,7 @@
 
 ## [4.2.0] - 2022-09-22
   - Added pytest tests
-  - Added option '...' to output indel size data
+  - Excel output now includes indel size data
   - Updated dependencies
 
 ## [4.1.0] - 2020-11-07
